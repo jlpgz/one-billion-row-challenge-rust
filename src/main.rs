@@ -7,10 +7,11 @@ use rayon::prelude::*;
 fn main() {
     let shared_values: Arc<Mutex<HashMap<String, Vec<f32>>>> = Arc::new(Mutex::new(HashMap::new()));
 
-    let file = fs::read_to_string("measurements_1m.txt").expect("Error reading the file");
+    let file = fs::read_to_string("measurements_1b.txt").expect("Error reading the file");
 
-    for line in file.split("\n") {
-        if line != "" {
+    file.par_lines()
+        .for_each(|line| {
+        if !line.is_empty() {
             let (station, measurement) = extract_data(line);
             let mut values = shared_values.lock().unwrap();
             match values.get_mut(&station) {
@@ -18,7 +19,7 @@ fn main() {
                 None => _ = values.insert(station, vec![measurement]),
             }
         }
-    }
+    });
     let averages: HashMap<String, f32> = shared_values
         .lock()
         .unwrap()
