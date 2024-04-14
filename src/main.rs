@@ -1,45 +1,49 @@
 use std::collections::HashMap;
-use std::fs::File;
-use std::io;
-use std::io::BufRead;
+use std::fs;
+use std::sync::{Arc, Mutex};
+
+use rayon::prelude::*;
 
 fn main() {
-    let mut values: HashMap<String, Vec<f32>> = HashMap::new();
+    let shared_values: Arc<Mutex<HashMap<String, Vec<f32>>>> = Arc::new(Mutex::new(HashMap::new()));
 
-    let file = File::open("measurements.txt").expect("Error opening data file");
-    let reader = io::BufReader::new(file);
+    let file = fs::read_to_string("measurements_1m.txt").expect("Error reading the file");
 
-    for line in reader.lines() {
-        match line {
-            Ok(line) => {
-                let (station, measurement) = extract_data(line);
-                match values.get_mut(&station) {
-                    Some(array) => array.push(measurement),
-                    None => _ = values.insert(station, vec![measurement])
-                }
+    for line in file.split("\n") {
+        if line != "" {
+            let (station, measurement) = extract_data(line);
+            let mut values = shared_values.lock().unwrap();
+            match values.get_mut(&station) {
+                Some(array) => array.push(measurement),
+                None => _ = values.insert(station, vec![measurement]),
             }
-            Err(error) => println!("{}", format!("Error reading line: {}", error.to_string())),
         }
     }
-    let averages: HashMap<String, f32> = values.iter().map(|(k, v)| {
-        let total: f32 = v.iter().sum();
-        (k.clone(), total / v.len() as f32)
-    }).collect();
+    let averages: HashMap<String, f32> = shared_values
+        .lock()
+        .unwrap()
+        .par_iter()
+        .map(|(k, v)| {
+            let total: f32 = v.iter().sum();
+            (k.clone(), total / v.len() as f32)
+        })
+        .collect();
 
-    let mut vec: Vec<(&String, &f32)> = averages.iter().collect();
+    let mut vec: Vec<(&String, &f32)> = averages.par_iter().collect();
     vec.sort_by(|a, b| a.0.cmp(b.0));
-    for (station, average) in averages.iter() {
+    for (station, average) in vec.iter() {
         println!("{}: {}", station, average);
     }
 }
 
-
-fn extract_data(line: String) -> (String, f32) {
+fn extract_data(line: &str) -> (String, f32) {
     let parts: Vec<&str> = line.split(";").collect();
     match parts[..] {
         [station, measurement] => {
             let station = station.to_string();
-            let measurement = measurement.parse::<f32>().expect("Unable to parse measurement");
+            let measurement = measurement
+                .parse::<f32>()
+                .expect("Unable to parse measurement");
             (station, measurement)
         }
         _ => panic!("Expected a line with two parts"),
@@ -52,7 +56,7 @@ mod tests {
 
     #[test]
     fn extract_line() {
-        let line = "Kelilalina;-96.9".to_string();
+        let line = "Kelilalina;-96.9";
         let (station, measurement) = extract_data(line);
 
         assert_eq!(station, "Kelilalina");
