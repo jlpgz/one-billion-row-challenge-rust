@@ -1,28 +1,30 @@
 use std::collections::HashMap;
 use std::fs;
-use std::sync::{Arc, Mutex};
 
 use rayon::prelude::*;
 
 fn main() {
-    let shared_values: Arc<Mutex<HashMap<String, Vec<f32>>>> = Arc::new(Mutex::new(HashMap::new()));
-
     let file = fs::read_to_string("measurements_1b.txt").expect("Error reading the file");
 
-    file.par_lines()
-        .for_each(|line| {
-        if !line.is_empty() {
-            let (station, measurement) = extract_data(line);
-            let mut values = shared_values.lock().unwrap();
-            match values.get_mut(&station) {
-                Some(array) => array.push(measurement),
-                None => _ = values.insert(station, vec![measurement]),
+    let values: HashMap<String, Vec<f32>> = file
+        .par_lines()
+        .map(|line| {
+            if !line.is_empty() {
+                let (station, measurement) = extract_data(line);
+                let mut values: HashMap<String, Vec<f32>> = HashMap::new();
+                values.insert(station, vec![measurement]);
+                values
+            } else {
+                HashMap::new()
             }
-        }
-    });
-    let averages: HashMap<String, f32> = shared_values
-        .lock()
-        .unwrap()
+        })
+        .reduce(HashMap::new, |mut acc, map| {
+            for (station, measurement) in map {
+                acc.entry(station).or_default().extend(measurement);
+            }
+            acc
+        });
+    let averages: HashMap<String, f32> = values
         .par_iter()
         .map(|(k, v)| {
             let total: f32 = v.iter().sum();
@@ -38,7 +40,7 @@ fn main() {
 }
 
 fn extract_data(line: &str) -> (String, f32) {
-    let parts: Vec<&str> = line.split(";").collect();
+    let parts: Vec<&str> = line.split(';').collect();
     match parts[..] {
         [station, measurement] => {
             let station = station.to_string();
