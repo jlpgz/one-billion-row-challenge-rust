@@ -8,35 +8,24 @@ use twox_hash::XxHash;
 fn main() {
     let file = fs::read_to_string("measurements_1b.txt").expect("Error reading the file");
 
-    let values: HashMap<String, Vec<f32>, BuildHasherDefault<XxHash>> = file
+    let values: HashMap<String, Vec<f32>> = file
         .par_lines()
-        .map(|line| {
+        .fold(HashMap::<String, Vec<f32>>::new, |mut acc, line| {
             if !line.is_empty() {
                 let (station, measurement) = extract_data(line);
-                let mut values: HashMap<String, Vec<f32>, BuildHasherDefault<XxHash>> =
-                    Default::default();
-                values.insert(station, vec![measurement]);
-                values
+                acc.entry(station).or_default().push(measurement);
+                acc
             } else {
-                let values: HashMap<String, Vec<f32>, BuildHasherDefault<XxHash>> =
-                    Default::default();
-                values
+                HashMap::new()
             }
         })
-        .reduce(
-            || {
-                let hash: HashMap<String, Vec<f32>, BuildHasherDefault<XxHash>> =
-                    Default::default();
-                hash
-            },
-            |mut acc, map| {
-                for (station, measurement) in map {
-                    acc.entry(station).or_default().extend(measurement);
-                }
-                acc
-            },
-        );
-    let averages: HashMap<String, f32, BuildHasherDefault<XxHash>> = values
+        .reduce(HashMap::<String, Vec<f32>>::new, |mut acc, map| {
+            for (station, measurements) in map {
+                acc.entry(station).or_default().extend(measurements);
+            }
+            acc
+        });
+    let averages: HashMap<String, f32> = values
         .par_iter()
         .map(|(k, v)| {
             let total: f32 = v.iter().sum();
