@@ -1,30 +1,42 @@
 use std::collections::HashMap;
 use std::fs;
+use std::hash::BuildHasherDefault;
 
 use rayon::prelude::*;
+use twox_hash::XxHash;
 
 fn main() {
     let file = fs::read_to_string("measurements_1b.txt").expect("Error reading the file");
 
-    let values: HashMap<String, Vec<f32>> = file
+    let values: HashMap<String, Vec<f32>, BuildHasherDefault<XxHash>> = file
         .par_lines()
         .map(|line| {
             if !line.is_empty() {
                 let (station, measurement) = extract_data(line);
-                let mut values: HashMap<String, Vec<f32>> = HashMap::new();
+                let mut values: HashMap<String, Vec<f32>, BuildHasherDefault<XxHash>> =
+                    Default::default();
                 values.insert(station, vec![measurement]);
                 values
             } else {
-                HashMap::new()
+                let values: HashMap<String, Vec<f32>, BuildHasherDefault<XxHash>> =
+                    Default::default();
+                values
             }
         })
-        .reduce(HashMap::new, |mut acc, map| {
-            for (station, measurement) in map {
-                acc.entry(station).or_default().extend(measurement);
-            }
-            acc
-        });
-    let averages: HashMap<String, f32> = values
+        .reduce(
+            || {
+                let hash: HashMap<String, Vec<f32>, BuildHasherDefault<XxHash>> =
+                    Default::default();
+                hash
+            },
+            |mut acc, map| {
+                for (station, measurement) in map {
+                    acc.entry(station).or_default().extend(measurement);
+                }
+                acc
+            },
+        );
+    let averages: HashMap<String, f32, BuildHasherDefault<XxHash>> = values
         .par_iter()
         .map(|(k, v)| {
             let total: f32 = v.iter().sum();

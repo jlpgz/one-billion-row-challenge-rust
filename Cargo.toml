@@ -7,3 +7,10 @@ edition = "2021"
 
 [dependencies]
 rayon = "1.10.0"
+twox-hash = "1.6.3"
+
+[profile.release]
+debug = 1
+
+[build]
+rustflags = ["-C", "symbol-mangling-version=v0"]
