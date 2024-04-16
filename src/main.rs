@@ -1,12 +1,15 @@
-use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::fs;
-use std::ops::Add;
+use std::{env, fs};
 
+// Ahash is a faster hashing algorithm. It provides its own AHashMap wrapper.
+// See https://github.com/tkaitchuck/ahash
+use ahash::AHashMap;
 use rayon::prelude::*;
 
 struct Average {
+    // Number of items of the average.
     number: f32,
+    // Average value.
     value: f32,
 }
 
@@ -26,11 +29,14 @@ impl Default for Average {
 }
 
 impl Average {
+    // Every time we push a new value the average is updated.
     fn push(&mut self, n: f32) {
         self.value = (self.value * self.number + n) / (self.number + 1.0);
         self.number += 1.0;
     }
 
+    // We can merge two Average structs. The one calling the method updates itself
+    // adding the values from the second one.
     fn merge(&mut self, rhs: Self) {
         self.value =
             (self.value * self.number + rhs.value * rhs.number) / (self.number + rhs.number);
@@ -39,32 +45,48 @@ impl Average {
 }
 
 fn main() {
-    let file = fs::read_to_string("measurements_1m.txt").expect("Error reading the file");
+    // Read the arguments passed to the application. We expect just one, which contains
+    // the path of the data file.
+    let args: Vec<String> = env::args().collect();
+    let path = args.get(1).expect("No arguments provided");
 
-    let values: HashMap<String, Average> = file
+    // Read the whole content of the file into memory.
+    let file = fs::read_to_string(path).expect("Error reading the file");
+
+    let values: AHashMap<String, Average> = file
+        // Use a parallel iterator over the lines.
         .par_lines()
+        // Extract data from every line, it generates (station, measurement) tuples.
         .map(extract_data)
+        // Parallel folding the tuples. Rayon decides how many batches are processed in parallel.
+        // The result contains several aggregated tuples. See rayon::fold documentation.
         .fold(
-            HashMap::<String, Average>::default,
+            AHashMap::<String, Average>::default,
             |mut acc, (station, measurement)| {
                 acc.entry(station).or_default().push(measurement);
                 acc
             },
         )
-        .reduce(HashMap::<String, Average>::new, |mut acc, e| {
+        // Reducing the result of the previous parallel folding. As opposed to fold, reduce
+        // produces one unique aggregated tuple.
+        .reduce(AHashMap::<String, Average>::new, |mut acc, e| {
             for (station, average) in e {
                 acc.entry(station).or_default().merge(average)
             }
             acc
         });
 
+    // We cannot order a HashMap, so we generate a Vec containing (station, average) tuples.
     let mut vec: Vec<(&String, &Average)> = values.par_iter().collect();
+    // And we order it by station name.
     vec.sort_by(|a, b| a.0.cmp(b.0));
+    // Finally print to screen the results.
     for (station, average) in vec.iter() {
         println!("{}: {}", station, average);
     }
 }
 
+// Extract data from a line and parse the measurement into a f32.
 fn extract_data(line: &str) -> (String, f32) {
     let parts: Vec<&str> = line.split(';').collect();
     match parts[..] {
