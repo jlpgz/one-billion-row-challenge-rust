@@ -80,7 +80,7 @@ fn main() {
     let mut vec: Vec<(&String, &Average)> = values.par_iter().collect();
     // And we order it by station name.
     vec.sort_by(|a, b| a.0.cmp(b.0));
-    // Finally print to screen the results.
+    // Finally, print to screen the results.
     for (station, average) in vec.iter() {
         println!("{}: {}", station, average);
     }
